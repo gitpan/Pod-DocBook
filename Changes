@@ -1,63 +1,98 @@
-v1.0
+=head1 v1.1
 
-    Thu 19 Feb 2004
+=over
 
-        o released Pod::DocBook 1.0
+=item Tue 16 Mar 2004
 
-    Tue 30 Dec 2003
+Released Pod::DocBook 1.1
 
-        o started rewrite of Pod::DocBook
+=item Wed 3 Mar 2004
 
-        o specialize Pod::Parser instead of parsing directly
+F<README> is now pod format (seemed appropriate)
 
-        o emit formatted DocBook 4.2 SGML
+=item Tue 2 Mar 2004
 
-========================================================================
-OLD -- Pod::DocBook 0.6 and earlier
-========================================================================
+F<Changes> is now pod format (seemed appropriate)
 
-0.0.6
-=====
+fixed doc: C<=item *> yields C<< <itemizedlist> >>, not
+C<< <simplelist> >>
 
-    o Support for L<> style linking, includes new Id naming scheme
+fixed bug in C<< <orderedlist> >> output
 
-    o additional styles, variable headx->secty mapping
+now uses MD5 hashes for fixed-length IDs (thanks to Jacques Supcik)
 
-    o removed unneccessary <para></para> pairs
+added B<--no-header> option to B<pod2docbook> (thanks to Jacques
+Supcik)
 
-    o fixed index building (but don't use this)
+=item Thu 26 Feb 2004
 
-    o general de-HTML-ization
+fixed bug with blank lines in C<=begin docbook> ... C<=end docbook>
+regions (thanks to Garry Williams)
 
-0.0.5
-=====
+=back
 
-    o Added an incremental fix from Pod::HTML which corrected bogus output
-      in C<0>, B<0> and so on tags.
+=head1 v1.0
 
-0.0.4
-=====
+=over
 
-    o Added handling for auto-tag generation
+=item Thu 19 Feb 2004
 
-0.0.3
-=====
+released Pod::DocBook 1.0
 
-    o POD files such as:
+=item Tue 30 Dec 2003
 
-        =head1 Some Chapter Title
+started rewrite of Pod::DocBook
 
-        blah
+specialize Pod::Parser instead of parsing directly
 
-      will format the first =head1 tag as a <chapter> tag and automatically
-      fill in the final </chapter> for you when run with --no-header and
-      --no-footer
+emit formatted DocBook 4.2 SGML
 
-    o =over/=item/=back handling cleaned up a bit to produce correct
-      <variablelist>, <orderedList> and <itemizedList> constructs
+=back
 
-    o Added basic auto-tagging handling.
+=head1  OLD -- Pod::DocBook 0.6 and earlier
 
-    o Added --root-id argument to specify the root tag id
+  0.0.6
+  =====
 
-    o Removed <A> tags which were an overhang from pod2html
+      o Support for L<> style linking, includes new Id naming scheme
+
+      o additional styles, variable headx->secty mapping
+
+      o removed unneccessary <para></para> pairs
+
+      o fixed index building (but don't use this)
+
+      o general de-HTML-ization
+
+  0.0.5
+  =====
+
+      o Added an incremental fix from Pod::HTML which corrected bogus output
+        in C<0>, B<0> and so on tags.
+
+  0.0.4
+  =====
+
+      o Added handling for auto-tag generation
+
+  0.0.3
+  =====
+
+      o POD files such as:
+
+          =head1 Some Chapter Title
+
+          blah
+
+        will format the first =head1 tag as a <chapter> tag and automatically
+        fill in the final </chapter> for you when run with --no-header and
+        --no-footer
+
+      o =over/=item/=back handling cleaned up a bit to produce correct
+        <variablelist>, <orderedList> and <itemizedList> constructs
+
+      o Added basic auto-tagging handling.
+
+      o Added --root-id argument to specify the root tag id
+
+      o Removed <A> tags which were an overhang from pod2html

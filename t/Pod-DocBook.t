@@ -5,10 +5,14 @@ use strict;
 use warnings;
 
 use Test;
-BEGIN { plan tests => 17 };
+BEGIN { plan tests => 18 };
 
 use Pod::DocBook;
 ok 1;
+
+#-----------------------------------------------------------------------
+# test translation
+#-----------------------------------------------------------------------
 
 my @samples = qw(head paragraphs indent lists docbook table formatting_codes
 		 e_command e_nested_fc e_unknown_fc e_empty_l e_escape
@@ -18,6 +22,7 @@ foreach my $name (@samples) {
     my $parser = Pod::DocBook->new (doctype           => 'section',
 				    title             => "$name.pod",
 				    fix_double_quotes => 1,
+				    header            => 1,
 				    spaces            => 2);
 
     $parser->parse_from_file ("t/$name.pod", "t/test-$name.out");
@@ -27,6 +32,22 @@ foreach my $name (@samples) {
 	  unlink "t/test-$name.out";
 }
 
+#-----------------------------------------------------------------------
+# test header option
+#-----------------------------------------------------------------------
+
+Pod::DocBook->new (doctype           => 'section',
+		   title             => "no_header.pod",
+		   fix_double_quotes => 1,
+		   header            => 0,
+		   spaces            => 2)
+            ->parse_from_file ("t/no_header.pod", "t/test-no_header.out");
+
+ok (check ("t/no_header.sgml", "t/test-no_header.out"), 1,
+    "t/test-no_header.out differs from t/no_header.sgml") &&
+  unlink "t/test-no_header.out";
+
+
 sub check
 {
     my ($file1, $file2) = @_;
@@ -35,15 +56,17 @@ sub check
     {
 	open my $fh1, $file1 or die "couldn't open $file1: $!\n";
 	open my $fh2, $file2 or die "couldn't open $file2: $!\n";
-	@file1 = <$fh1>;
-	@file2 = <$fh2>;
+
+	# omit the module comment, because the local system's
+	# modules may differ from the author's
+	while (<$fh1>) {
+	    push @file1, $_ unless /^<!--/ .. /^-->/;
+	}
+
+	while (<$fh2>) {
+	    push @file2, $_ unless /^<!--/ .. /^-->/;
+	}
     }
-
-    # remove the header and module comment, because the local system's
-    # modules may differ from the author's
-    1 while shift (@file1) ne "-->\n";
-    1 while shift (@file2) ne "-->\n";
-
 
     # only files beginning with `e_' should have errors
     return 0 if $file2 !~ m!^t/test-e_! && grep /POD ERRORS/, @file2;

@@ -9,12 +9,13 @@ use Pod::Usage;
 
 my $doctype = 'section';
 my $spaces  = 2;
-my ($title, $double_quotes, $help);
+my ($title, $double_quotes, $help, $no_header);
 
 pod2usage unless GetOptions ('doctype=s'           => \$doctype,
 			     'title=s'             => \$title,
 			     'spaces=i'            => \$spaces,
 			     'fix-double-quotes'   => \$double_quotes,
+			     'no-header'           => \$no_header,
 			     'help'                => \$help,
 			    );
 
@@ -25,8 +26,10 @@ pod2usage unless $spaces =~ /^\d+$/;
 
 if (@ARGV == 0) {
     $title = '' unless defined $title;
-    my $parser = Pod::DocBook->new (title => $title, doctype => $doctype,
+    my $parser = Pod::DocBook->new (title => $title,
+				    doctype => $doctype,
 				    fix_double_quotes => $double_quotes,
+				    header => ! $no_header,
 				    spaces => $spaces);
     $parser->parse_from_filehandle(\*STDIN);
 }
@@ -35,8 +38,10 @@ else {
     my ($infile, $outfile) = @ARGV;
 
     ($title) = $infile =~ m!([^/]+)\z! unless defined $title;
-    my $parser = Pod::DocBook->new (title => $title, doctype => $doctype,
+    my $parser = Pod::DocBook->new (title => $title,
+				    doctype => $doctype,
 				    fix_double_quotes => $double_quotes,
+				    header => ! $no_header,
 				    spaces => $spaces);
 
     if (defined $outfile) {
@@ -58,7 +63,7 @@ pod2docbook - Convert POD data to DocBook SGML
 pod2docbook [B<--help>]
 [B<--doctype>=B<article>|B<chapter>|B<section>|B<refentry>]
 [B<--title>=I<title>] S<[B<--spaces>=I<# spaces per indent level>]>
-[B<--fix-double-quotes>] S<[I<infile> [I<outfile>]]>
+[B<--fix-double-quotes>] [B<--no-header>] S<[I<infile> [I<outfile>]]>
 
 =head1 DESCRIPTION
 
@@ -94,6 +99,10 @@ the default is 2.
 
 Replace pairs of double quotes in regular paragraphs with <quote> and
 </quote> (see L<Pod::DocBook> for details).
+
+=item [B<--no-header>]
+
+Omit the DOCTYPE line from the output.
 
 =item I<infile>
 

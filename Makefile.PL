@@ -4,7 +4,8 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'Pod::DocBook',
     VERSION_FROM      => 'lib/Pod/DocBook.pm',
-    PREREQ_PM         => { Pod::Parser      => 0,
+    PREREQ_PM         => { Digest::MD5      => 0,
+			   Pod::Parser      => 0,
 			   Pod::ParseLink   => 0,
 			   Text::ParseWords => 0,
 			   Text::Wrap       => 0 },
