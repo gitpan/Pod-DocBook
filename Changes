@@ -1,3 +1,13 @@
+=head1 v1.2
+
+=over
+
+=item Tue 16 Mar 2004
+
+Released Pod::DocBook 1.2
+
+Added missing test files
+
 =head1 v1.1
 
 =over

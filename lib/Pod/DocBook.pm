@@ -11,7 +11,7 @@ use Text::ParseWords;
 use Text::Wrap;
 
 our @ISA     = qw(Pod::Parser);
-our $VERSION = '1.1';
+our $VERSION = '1.2';
 
 #----------------------------------------------------------------------
 # overridden Pod::Parser methods

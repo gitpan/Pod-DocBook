@@ -34,6 +34,8 @@ t/indent.pod
 t/indent.sgml
 t/lists.pod
 t/lists.sgml
+t/no_header.pod
+t/no_header.sgml
 t/paragraphs.pod
 t/paragraphs.sgml
 t/table.pod
