@@ -14,7 +14,7 @@ require Exporter;
 @ISA = Exporter;
 @EXPORT = qw( pod2docbook );
 use Cwd;
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 use Carp;
 
@@ -391,8 +391,6 @@ END_OF_HEAD
     if ( $nofooter == 0 ) {
         print SGML <<END_OF_TAIL;
 
-</chapter> <!-- End of the chapter -->
-
 </book>    <!-- End of the book -->
 END_OF_TAIL
       }
@@ -678,15 +676,15 @@ sub process_item {
             $listitemActive = 0;
           }
         if ( $need_preamble ) {
-            push( @listend,  "</listitem></varlistentry></variablelist></para>\n" );
-            print SGML "<para><variableList>\n";
+            push( @listend,  "</listitem></varlistentry></variablelist>\n" );
+            print SGML "<variableList>\n";
           }
         print SGML "<varlistentry><term><emphasis>";
         $quote = 1;
         #print SGML process_puretext($text, \$quote);
-        print SGML "<para>\n";
+#        print SGML "<para>\n";
         print SGML $text;
-        print SGML "</para>\n";
+#        print SGML "</para>\n";
         print SGML "</emphasis></term>\n";
         print SGML "<listitem><para></para>\n";
         $listitemActive = 1;
@@ -868,7 +866,7 @@ sub process_text {
     # parse through the string, stopping each time we find a
     # pod-escape.  once the string has been throughly processed
     # we can output it.
-    while ($rest) {
+    while ( length $rest) {
         # check to see if there are any possible pod directives in
         # the remaining part of the text.
         if ($rest =~ m/[BCEIFLSZ]</) {
