@@ -1,3 +1,15 @@
+0.0.6
+=====
+
+    o Support for L<> style linking, includes new Id naming scheme
+
+    o additional styles, variable headx->secty mapping
+
+    o removed unneccessary <para></para> pairs
+
+    o fixed index building (but don't use this)
+
+    o general de-HTML-ization
 
 0.0.5
 =====

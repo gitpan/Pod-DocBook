@@ -1,5 +1,5 @@
 
-README for pod2docbook -- Version 0.04 -- 5th February 1999
+README for pod2docbook -- Version 0.06 -- 29th Nov 1999
 ===========================================================
 
 About
@@ -13,8 +13,7 @@ with the Davenport Group.
 POD Tag Support
 ---------------
 
-All POD tags are supported, with the exception of L<> which produces 
-italicized text.
+All POD tags are supported.
 
 Installation
 ------------

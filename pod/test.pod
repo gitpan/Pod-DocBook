@@ -12,7 +12,8 @@ route that led me to the brink of madness in my quest for the Holy Grail
 of POD to DocBook conversion.
 
 This is the third paragraph in which I I<did> B<actually> lOsE B<m>I<y>
-mind.
+mind. Oh, by the way, you are right now reading L<The Testing of POD to
+DocBook>, aren't you?
 
     Ia shub Niggurath!
 
@@ -47,15 +48,32 @@ the Old Ones.
 
 =item *
 
-A pair of large capacity rubber underpants
+A pair of large capacity rubber underpants (see L<The lesser-known Key
+of Solomon> for an explanation).
 
 =item *
 
-Some chalk
+Some chalk (but don't confuse this with L<Aspirin>)
 
 =item *
 
 Some Aspirin
+
+=item * Aspirin
+
+really is trademarked.
+
+=over 2
+
+=item 1
+
+Some nested lists will make you need Aspirin,too.
+
+=item 2
+
+(or try some sleep)
+
+=back
 
 =back
 

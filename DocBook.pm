@@ -14,7 +14,7 @@ require Exporter;
 @ISA = Exporter;
 @EXPORT = qw( pod2docbook );
 use Cwd;
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 use Carp;
 
@@ -31,9 +31,9 @@ Pod::DocBook - module to convert pod files to DocBook SGML
 
 =head1 DESCRIPTION
 
-Converts files from pod format ( see L<perlpod> ) to DocBook format.  It
-can automatically generate indexes and cross-references, and it keeps
-a cache of things it knows how to cross-reference.
+Converts files from pod format ( see L<perlpod> ) to DocBook format.
+It can automatically generate indexes (but SGML does this better) and
+cross-references.
 
 =head1 ARGUMENTS
 
@@ -58,14 +58,14 @@ infile is specified.
 
     --outfile=name
 
-Specify the HTML file to create.  Output goes to STDOUT if no outfile
+Specify the SGML file to create.  Output goes to STDOUT if no outfile
 is specified.
 
 =item title
 
     --title=title
 
-Specify the title of the resulting HTML file.
+Specify the title of the resulting SGML file.
 
 =item no-header
 
@@ -79,12 +79,26 @@ Doesn't write a default header out for the DTD.
 
 Doesn't write a default footer out for the DTD.
 
+=item custom-header
+
+    --custom-header=file
+
+Read DTD header from a file.
+
+=item custom-footer
+
+    --custom-footer=file
+
+Read footer from a file.
+
 =item root-id
 
     --root-id
 
-Specifies the root identifier for the base element used in chapter and section
-tags. The default is I<pod2docbook-ch-1>.
+Specifies the root identifier for the base element used in the new SGML
+document. The default is the part of the NAME header before '-' or some
+short version of the full NAME header or something loosely resembling
+the filename or I<pod2docbook-ch-1> if none of the above is defined.
 
 =item verbose
 
@@ -92,7 +106,34 @@ tags. The default is I<pod2docbook-ch-1>.
 
 Display progress messages.
 
+=item style
+
+    --style=article|book|chapter_in_book
+
+Use 'article' or 'book' instead of default (chapter_in_book) style
+(i.e. toplevel markup is sect1, not chapter; headers are different)
+
+=item firstsect
+
+    --firstsect=n
+
+Start with <lt>sect I<n><gt> as the top level tag. Mainly useful for
+including the docbook file into other SGML files. Use with
+--no-header, --no-footer, otherwise the result will likely violate the
+docbook DTD.
+
 =back
+
+=head1 LINKS
+
+This release features some support for LE<lt>E<gt> tag
+links. Basically anything within a single POD document should
+work. External links are guessed and may of course fail. You'll need
+to put together all of your converted PODs in order for SGML links to
+work. Since the Id-attributes of entities are loosely based on
+filename and entity name, you may get namespace conflicts. Internal
+links should still work, but there is little chance for you to reach
+these entities automatically from the outside.
 
 =head1 EXAMPLE
 
@@ -106,13 +147,19 @@ L<pod2html> source code by Tom Christiansen, E<lt>tchrist@perl.comE<gt>,
 for it is he. Many thanks to Chris Maden of O'Reilly & Associations for
 doing serious road-testing on this module.
 
+Jan Iven E<lt>jiven@gmx.de<gt> fixed a few things and had a shot at
+LE<lt>E<gt> tags.
+
+
 =head1 BUGS
 
-Has trouble with C<> etc in = commands.
+Has trouble with CE<lt>E<gt> etc in = commands.
 
 =head1 LIMITATIONS
 
-Nested =over/=back lists are not supported within DocBook.
+There seems to be some kind of item linking using the CE<lt>E<gt>
+tag. Since according to L<perlpod> item links are done with
+the CE<lt>E<gt> tag, this is not supported here.
 
 =head1 SEE ALSO
 
@@ -132,18 +179,29 @@ my $listitemActive = 0;
 my $noheader = 0;
 my $nofooter = 0;
 
+my $customheader = '';
+my $customfooter= '';
+
 my $firstSect1 = 1;
 
-### Setup the section indices...
-my @sectIndex = ( 'X', 1, 'a', 1, 'a', 1, 'a' );
+my $needpara = 0;  # Remember to print a <para></para> if nobody else will
 
-my $rootId = "pod2docbook-ch-1";
+# What names to map to the different Headings
+my @sectNames = ('part',
+		 'chapter',
+		 'sect1',
+		 'sect2',
+		 'sect3',
+		 'sect4',
+		 'sect5',
+		 'para');
+
+my $defaultrootId = "pod2docbook-ch-1";
+my $rootId = undef;
 
 my @begin_stack = ();        # begin/end stack
 
 my @libpods = ();            # files to search for links from C<> directives
-my $htmlroot = "/";            # http-server base directory from which all
-                #   relative paths in $podpath stem.
 my $sgmlfile = "";        # write to stdout by default
 my $podfile = "";        # read from stdin by default
 my @podpath = ();        # list of directories containing library pods.
@@ -151,9 +209,9 @@ my $podroot = ".";        # filesystem base directory from which all
                 #   relative paths in $podpath stem.
 my $recurse = 1;        # recurse on subdirectories in $podpath.
 my $verbose = 0;        # not verbose by default
-my $doindex = 1;               # non-zero if we should generate an index
+my $doindex = 0;               # non-zero if we should generate an index
 my $listlevel = 0;        # current list depth
-my @listitem = ();        # stack of HTML commands to use when a =item is
+my @listitem = ();        # stack of SGML commands to use when a =item is
                 #   encountered.  the top of the stack is the
                 #   current list.
 my @listdata = ();        # similar to @listitem, but for the text after
@@ -163,6 +221,7 @@ my @listend = ();        # similar to @listitem, but the text to use to
 my $ignore = 1;            # whether or not to format text.  we don't
                 #   format text until we hit our first pod
                 #   directive.
+my $style = 'book';   # or 'article'
 
 my %items_named = ();        # for the multiples of the same item in perlfunc
 my @items_seen = ();
@@ -172,8 +231,6 @@ my $top = 1;            # true if we are at the top of the doc.  used
                 #   to prevent the first <HR> directive.
 my $paragraph;            # which paragraph we're processing (used
                 #   for error messages)
-my %pages = ();            # associative array used to find the location
-                #   of pages referenced by L<> links.
 my %sections = ();        # sections within this page
 my %items = ();            # associative array used to find the location
                 #   of =item directives referenced by C<> links
@@ -184,8 +241,6 @@ sub init_globals {
 @begin_stack = ();        # begin/end stack
 
 @libpods = ();            # files to search for links from C<> directives
-$htmlroot = "/";            # http-server base directory from which all
-                #   relative paths in $podpath stem.
 $sgmlfile = "";        # write to stdout by default
 $podfile = "";        # read from stdin by default
 @podpath = ();        # list of directories containing library pods.
@@ -193,9 +248,9 @@ $podroot = ".";        # filesystem base directory from which all
                 #   relative paths in $podpath stem.
 $recurse = 1;        # recurse on subdirectories in $podpath.
 $verbose = 0;        # not verbose by default
-$doindex = 1;               # non-zero if we should generate an index
+$doindex = 0;               # non-zero if we should generate an index
 $listlevel = 0;        # current list depth
-@listitem = ();        # stack of HTML commands to use when a =item is
+@listitem = ();        # stack of SGML commands to use when a =item is
                 #   encountered.  the top of the stack is the
                 #   current list.
 @listdata = ();        # similar to @listitem, but for the text after
@@ -205,6 +260,11 @@ $listlevel = 0;        # current list depth
 $ignore = 1;            # whether or not to format text.  we don't
                 #   format text until we hit our first pod
                 #   directive.
+$style = 'chapter_in_book';   # or 'article'
+
+$customheader = '';
+$customfooter= '';
+
 
 @items_seen = ();
 %items_named = ();
@@ -216,12 +276,6 @@ $paragraph = '';            # which paragraph we're processing (used
                 #   for error messages)
 %sections = ();        # sections within this page
 
-# These are not reinitialised here but are kept as a cache.
-# See get_cache and related cache management code.
-#%pages = ();            # associative array used to find the location
-                #   of pages referenced by L<> links.
-#%items = ();            # associative array used to find the location
-                #   of =item directives referenced by C<> links
 }
 
 sub pod2docbook {
@@ -230,10 +284,6 @@ sub pod2docbook {
     local $_;
 
     init_globals();
-
-    # cache of %pages and %items from last time we ran pod2docbook
-
-    #undef $opt_help if defined $opt_help;
 
     # parse the command-line parameters
     parse_command_line();
@@ -249,7 +299,6 @@ sub pod2docbook {
     *POD = *ARGV;
     } 
     $sgmlfile = "-" unless $sgmlfile;    # stdout
-    $htmlroot = "" if $htmlroot eq "/";    # so we don't get a //
 
     # read the pod a paragraph at a time
     warn "Scanning for sections in input file(s)\n" if $verbose;
@@ -261,30 +310,79 @@ sub pod2docbook {
     my $index = scan_headings(\%sections, @poddata);
 
     unless($index) {
-    warn "No pod in $podfile\n" if $verbose;
-    return;
+      warn "No pod in $podfile\n" if $verbose;
+      return;
     }
+
+    # scan the pod for =item directives
+    scan_items(\%items, @poddata);
+
 
     # open the output file
     open( SGML, ">$sgmlfile")
         || die "$0: cannot open $sgmlfile file for output: $!\n";
 
-    # put a title in the HTML file
+    # put a title in the SGML file, unless it is explicitly specified
+    my $giventitle = $title; # save the given title while we do the matching
     $title = '';
+    my $shorttitle = ''; # used for unique section-IDs
+
     TITLE_SEARCH: {
     for (my $i = 0; $i < @poddata; $i++) { 
         if ($poddata[$i] =~ /^=head1\s*NAME\b/m) {
-        for my $para ( @poddata[$i, $i+1] ) { 
-            last TITLE_SEARCH if ($title) = $para =~ /(\S+\s+-+\s*.*)/s;
+	  for my $para ( @poddata[$i, $i+1] ) { 
+            last TITLE_SEARCH
+	      if ($title) = $para =~ /(\S+\s+-+.*?\S)[\n\s]*$/s;
+	  }
         }
-        } 
+      } 
+    } 
 
-    } 
-    } 
-    if (!$title and $podfile =~ /\.pod$/) {
+    # Try to separate scriptname from one-line description
+    if ($title =~ /(\S+)\s+-+\s+/) {
+      $shorttitle = $1;
+    }
+
+    # next set the rootID based on some reasonable guesswork
+    # 1. explicitly set by -rootId
+    # 2. short title: NAME foo - ....
+    # 3. long title: NAME foo bar baz
+    # 4. filename w/o extensions
+    # 5. default
+    #  2.-4. will be mangled to conform to SGML naming conventions
+    if (!defined($rootId)) {
+      my $message;
+      if ($shorttitle) {
+	$message = "short title";
+	$rootId = $shorttitle;
+      } elsif ($title) {
+	$message = "full title";
+	$rootId = $title;
+      } elsif ($podfile && $podfile ne '-') {
+	$message = "filename";
+	$rootId = $podfile;
+	$rootId =~ s/\.(pm|pl|pod)$//g;
+      } else {
+	$message = "default id";
+	$rootId = $defaultrootId;
+      }
+      $rootId = sgmlify($rootId);
+      warn "adopted $message \"$rootId\" as root Id\n" if $verbose;
+    } else {
+      warn "root Id set to \"$rootId\"\n" if $verbose;
+    }
+
+
+    if ($title and $giventitle) {
+      warn "overriding found title \"$title\" with \"$giventitle\"\n"
+	if $verbose;
+      $title = $giventitle;
+    }
+
+    if (!$shorttitle and !$title and $podfile =~ /\.pod$/) {
     # probably a split pod so take first =head[12] as title
     for (my $i = 0; $i < @poddata; $i++) { 
-        last if ($title) = $poddata[$i] =~ /^=head[12]\s*(.*)/;
+        last if ($title) = $poddata[$i] =~ /^=head[12]\s*(.*?)\s*/;
     } 
     warn "adopted '$title' as title for $podfile\n"
         if $verbose and $title;
@@ -296,9 +394,37 @@ sub pod2docbook {
     warn "using $title" if $verbose;
     }
 
-    if ( $noheader == 0 ) {
-        print SGML <<END_OF_HEAD;
-<!DOCTYPE book PUBLIC "-//Davenport//DTD DocBook V2.4.1//EN" "/opt/texmf/gmat/sgml/Davenport/dtds/2.4.1/docbook.dtd">
+
+
+    ## now write the complete header
+
+    if ($noheader) {
+      # NO HEADER wanted. simply put a top-level element with the title here
+      my $poplevel = 0;
+      push @sectStack, $poplevel;
+      print SGML <<END_OF_HEAD;
+<$sectNames[0] id="$rootId">
+  <title>$title</title>
+
+END_OF_HEAD
+    } elsif ($customheader) {
+      # CUSTOM HEADER file. Not much we can do regarding title or rootId...
+
+	if (open(HEADER, "<$customheader")) {
+	  my @tmp = <HEADER>;
+	  close(HEADER);
+	  print SGML @tmp;
+	} else {
+	  warn "$0: cannot open $customheader file for input: $!\n";
+	}
+    } elsif ($style eq 'article'){
+      # books typically start with chapters, nor parts...
+      shift @sectNames;
+
+      print SGML <<END_OF_HEAD;
+<!DOCTYPE article PUBLIC "-//Davenport//DTD DocBook V3.0//EN" [
+]
+>
 <!-- -->
 <!-- \$Id\$ -->
 <!-- -->
@@ -306,33 +432,66 @@ sub pod2docbook {
 <!-- -->
 <!-- General reminders: -->
 
-<book>
-
-<chapter id="$rootId"><title>$title</title>
+<article id="$rootId">
+  <artheader>
+    <title>$title</title>
+  </artheader>
 END_OF_HEAD
-      }
 
-    # load/reload/validate/cache %pages and %items
-#    get_cache($dircache, $itemcache, \@podpath, $podroot, $recurse);
+    } elsif ($style eq 'book') {
 
-    # scan the pod for =item directives
-    scan_items("", \%items, @poddata);
+	print SGML <<END_OF_HEAD;
+<!DOCTYPE book PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<!-- -->
+<!-- \$Id\$ -->
+<!-- -->
+<!-- \$Log\$ -->
+<!-- -->
+<!-- General reminders: -->
 
-    # put an index at the top of the file.  note, if $doindex is 0 we
-    # still generate an index, but surround it with an html comment.
-    # that way some other program can extract it if desired.
-    $doindex = 0;
+<book id="$rootId">
+  <title>$title</title>
+
+END_OF_HEAD
+
+    } elsif ($style eq 'chapter_in_book') {
+      # compatibility style: book with one chapter (not part)
+      shift @sectNames;
+      my $poplevel = 0;
+      push @sectStack, $poplevel;
+
+      print SGML <<END_OF_HEAD;
+<!DOCTYPE book PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<!-- -->
+<!-- \$Id\$ -->
+<!-- -->
+<!-- \$Log\$ -->
+<!-- -->
+<!-- General reminders: -->
+
+<book id="$rootId">
+  <title>$title</title>
+
+  <$sectNames[0] id="$rootId-c">
+    <title>$title</title>
+END_OF_HEAD
+
+    } else {
+      die "no header for style $style, use a custom header";
+    }
+
+    # normally no index is needed for SGML files. The SGML interpreter
+    # does a better job of this. However, if you still insist...
+
     if ( $doindex ) {
-        $index =~ s/--+/-/g;
-        print SGML "<sect1 id=\"index\">\n";
-        print SGML "<!-- INDEX BEGIN -->\n";
-        print SGML "<!--\n" unless $doindex;
-        print SGML $index;
-        print SGML "-->\n" unless $doindex;
-        print SGML "<!-- INDEX END -->\n\n";
-        print SGML "</sect1>\n\n";
-      }
-    
+      $index =~ s/--+/-/g;
+      print SGML "<$sectNames[0]  id=\"$rootId-autogen-index\">\n";
+      print SGML "<!-- INDEX BEGIN -->\n";
+      print SGML $index;
+      print SGML "<!-- INDEX END -->\n\n";
+      print SGML "</$sectNames[0]>\n\n";
+    }
+
     # now convert this file
     warn "Converting input file\n" if $verbose;
     foreach my $i (0..$#poddata) {
@@ -350,7 +509,8 @@ END_OF_HEAD
           } elsif (/^=pod/) {            # =pod
             process_pod();
           } else {
-            next if @begin_stack && $begin_stack[-1] ne 'html';
+            next if @begin_stack &&
+	      $begin_stack[-1] !~ /^(pod2)?docbook|sgml$/;
 
         if (/^=(head[1-6])\s+(.*)/s) {    # =head[1-6] heading
             process_head($1, $2);
@@ -372,30 +532,53 @@ END_OF_HEAD
     }
     else {
         next if $ignore;
-        next if @begin_stack && $begin_stack[-1] ne 'html';
+        next if @begin_stack &&
+	  $begin_stack[-1] !~ /^(pod2)?docbook|sgml$/;
         my $text = $_;
         process_text(\$text, 1);
         print SGML "<para>\n$text\n</para>\n\n";
+	$needpara = 0;    # we have just printed a para...
+	
     }
     }
 
     # finish off any pending directives
+    print_para_if_needed();
+
     my $popLevel = pop @sectStack;
     while ( defined $popLevel ) {
 #        print STDERR "Clearing down stack $popLevel\n";
-        print SGML "</sect$popLevel>\n\n";
+        print SGML "</".$sectNames[$popLevel].">\n\n";
         $popLevel = pop @sectStack;
       }
-    print SGML "</chapter>\n\n";
 
     if ( $nofooter == 0 ) {
+      if ($customfooter) {
+	if (open(FOOTER, "<$customfooter")) {
+	  my @tmp = <FOOTER>;
+	  close(FOOTER);
+	  print SGML @tmp;
+	} else {
+	  warn "$0: cannot open $customfooter file for input: $!\n";
+	}
+      } elsif ($style eq 'article') {
+        print SGML <<END_OF_TAIL;
+
+</article>
+END_OF_TAIL
+
+      } elsif ($style eq 'book' or
+	       $style eq 'chapter_in_book') {
         print SGML <<END_OF_TAIL;
 
 </book>    <!-- End of the book -->
 END_OF_TAIL
+      } else {
+	die "unknown style $style in tail";
       }
+    }
 
-    # close the html file
+    # close the sgml file
     close( SGML );
 
     warn "Finished\n" if $verbose;
@@ -417,19 +600,25 @@ Usage:  $0 --help --infile=<name> --outfile=<name> --verbose
   --help       - prints this message.
   --infile     - filename for the pod to convert (input taken from stdin
                  by default).
-  --outfile    - filename for the resulting html file (output sent to
+  --outfile    - filename for the resulting sgml file (output sent to
                  stdout by default).
-  --title      - title that will appear in resulting html file.
+  --title      - title that will appear in resulting SGML file.
   --no-header  - Doesn't write a header out for the SGML file
   --no-footer  - Doesn't write a footer out for the SGML file
+  --custom-header - read header from a file
+  --custom-footer - read footer from a file
   --root-id    - Specifies the root identifier for chapter and section tags
+  --firstsect  - Section level to start with
   --verbose    - self-explanatory
+  --style      - 'book', 'chapter_in_book' (default) or 'article'
 
 END_OF_USAGE
 
 sub parse_command_line {
     my ( $opt_help, $opt_infile, $opt_outfile, 
-         $opt_title, $opt_verbose, $opt_header, $opt_footer, $opt_rootId );
+         $opt_title, $opt_verbose, $opt_header, $opt_footer,
+         $opt_cust_header, $opt_cust_footer, $opt_rootId,
+	 $opt_style, $opt_firstsect );
     my $result = GetOptions(
                 'help'       => \$opt_help,
                 'infile=s'   => \$opt_infile,
@@ -437,8 +626,12 @@ sub parse_command_line {
                 'title=s'    => \$opt_title,
                 'no-header' => \$opt_header,
                 'no-footer' => \$opt_footer,
+                'custom-header=s' => \$opt_cust_header,
+                'custom-footer=s' => \$opt_cust_footer,
                 'root-id=s'   => \$opt_rootId,
                 'verbose'    => \$opt_verbose,
+                'style=s'    => \$opt_style,
+                'firstsect=s'    => \$opt_firstsect,
                );
     usage("-", "invalid parameters") if not $result;
 
@@ -451,10 +644,23 @@ sub parse_command_line {
     $noheader = 1 if defined $opt_header;
     $nofooter = 1 if defined $opt_footer;
 
+    $customheader = $opt_cust_header if defined $opt_cust_header;
+    $customfooter = $opt_cust_footer if defined $opt_cust_footer;
+
     $rootId = $opt_rootId if defined $opt_rootId;
 
     $title    = $opt_title if defined $opt_title;
     $verbose  = defined $opt_verbose ? 1 : 0;
+
+    $style = $opt_style if defined $opt_style;
+
+    $opt_firstsect = 0 unless defined $opt_firstsect;
+    while ($opt_firstsect) {
+      $opt_firstsect--;
+      shift @sectNames;
+    }
+    die "Can't start a section level $opt_firstsect: not enough section tags"
+      unless $#sectNames >=0;
 }
 
 
@@ -470,24 +676,37 @@ sub scan_headings {
     $index = "";
 
     # scan for =head directives, note their name, and build an index
-    #  pointing to each of them.
+    #  pointing to each of them. Compute some Id for the title as well.
     foreach my $line (@data) {
-    if ($line =~ /^=(head)([1-6])\s+(.*)/) {
-        ($tag,$which_head, $title) = ($1,$2,$3);
-        chomp($title);
-        $$sections{htmlify(0,$title)} = 1;
-
-        if ($which_head > $listdepth) {
-        $index .= "\n" . ("\t" x $listdepth) . "<itemizedList>\n";
-        } elsif ($which_head < $listdepth) {
-        $listdepth--;
-        $index .= "\n" . ("\t" x $listdepth) . "</itemizedList>\n";
-        }
-        $listdepth = $which_head;
-
-        $index .= "\n" . ("\t" x $listdepth) . "<listitem><para>" .
-                  process_text( \$title, 0 ) . "</para></listitem>";
-    }
+      if ($line =~ /^=(head)([1-6])\s+(.*)/s) {
+	($tag,$which_head, $title) = ($1,$2,$3);
+	chomp($title);
+	my $id = sgmlify($title);
+	if ($$sections{$id}) {
+	  my $i = 0;
+	  my $tempid=$id;
+	  while ($$sections{$tempid}) {
+	    $i++;
+	    $tempid = $id ."-". $i;
+	  }
+	  $id = $tempid;
+	  warn "$0: section title '$title' won't give an unique id, using '$id'\n";
+	}
+	$$sections{$id} = $title;
+	
+	
+	if ($which_head > $listdepth) {
+	  $index .= "\n" . ("\t" x $listdepth) . "<itemizedList>\n";
+	} elsif ($which_head < $listdepth) {
+	  $listdepth--;
+	  $index .= "\n" . ("\t" x $listdepth) . "</itemizedList>\n";
+	}
+	$listdepth = $which_head;
+	
+	$index .= "\n" . ("\t" x $listdepth) . "<listitem><para>" .
+	  "<link linkend=\"$id\">".
+	    process_text( \$title, 0 ) . "</link></para></listitem>";
+      }
     }
 
     # finish off the lists
@@ -508,41 +727,53 @@ sub scan_headings {
 #  will use this information later on in resolving C<> links.
 #
 sub scan_items {
-    my($pod, @poddata) = @_;
+    my($items, @poddata) = @_;
     my($i, $item);
-    local $_;
 
-    $pod =~ s/\.pod$//;
-    $pod .= ".html" if $pod;
 
-    foreach $i (0..$#poddata) {
-    $_ = $poddata[$i];
+    for (@poddata) {
 
-    # remove any formatting instructions
-    s,[A-Z]<([^<>]*)>,$1,g;
+      # remove any formatting instructions
+      s,[A-Z]<([^<>]*)>,$1,g;
 
-    # figure out what kind of item it is and get the first word of
-    #  it's name.
-    if (/^=item\s+(\w*)\s*.*$/s) {
+      # figure out what kind of item it is and get the rest of the string
+      if (/^=item\s+([\w*]*)\s*.*$/s) {
+	$item = undef;
+
         if ($1 eq "*") {        # bullet list
-        /\A=item\s+\*\s*(.*?)\s*\Z/s;
-        $item = $1;
+	  if ( /\A=item\s+\*\s*(.*?)\s*\Z/s) {
+	    $item = $1;
+	  }
         } elsif ($1 =~ /^[0-9]+/) {    # numbered list
-        /\A=item\s+[0-9]+\.?(.*?)\s*\Z/s;
-        $item = $1;
+	  if ( /\A=item\s+[0-9]+\.?(.*?)\s*\Z/s) {
+	    $item = $1;
+	  }
         } else {
-#        /\A=item\s+(.*?)\s*\Z/s;
-        /\A=item\s+(\w*)/s;
-        $item = $1;
+	  if ( /\A=item\s+(.*?)\s*\Z/s) {
+	    $item = $1;
+	  }
         }
 
-        $items{$item} = "$pod" if $item;
-    }
+	if ($item) {
+	  my $id = sgmlify($item);
+	  if ($$items{$id}) {
+	    my $i = 0;
+	    my $tempid=$id;
+	    while ($$items{$tempid}) {
+	      $i++;
+	      $tempid = $id ."-". $i;
+	    }
+	    $id = $tempid;
+	    warn "$0: item '$item' won't give an unique id, using '$id'\n";
+	  }
+	  $$items{$id} = $item;
+	}
+      }
     }
 }
 
 #
-# process_head - convert a pod head[1-6] tag and convert it to HTML format.
+# process_head - convert a pod head[1-6] tag and convert it to DocBook format.
 #
 sub process_head {
     my($tag, $heading) = @_;
@@ -553,157 +784,167 @@ sub process_head {
     my $level = $1;
 
     # can't have a heading full of spaces and speechmarks and so on
-    $firstword = $heading; $firstword =~ s/\s*(\w+)\s.*/$1/;
-
-#    print STDERR "process_head: $level\n";
+    $firstword = $heading;
+    $firstword =~ s/\s*(\w+)\s.*/$1/;
+    chomp($heading);
 
     ### If a sect is active, close it off...
+    print_para_if_needed();
     my $popLevel = pop @sectStack;
     while ( defined $popLevel && $level <= $popLevel ) {
-#        print STDERR "Popping sectStack: $popLevel\t$#sectStack\n";
-        print SGML "</sect$popLevel>";
-        print SGML "\n\n";
-        if ( ( $popLevel ) % 2 == 0 ) {
-            $sectIndex[$popLevel+1] = 1;
-          } else {
-            $sectIndex[$popLevel+1] = 'a';
-          }
-        $sectIndex[$popLevel]++;
-        $popLevel = pop @sectStack;
-      }
+      print SGML <<"EOSGML";
+</$sectNames[$popLevel]>
+
+EOSGML
+
+      $popLevel = pop @sectStack;
+    }
+
     if ( defined $popLevel ) {
-        push @sectStack, $popLevel;
-      }
+      push @sectStack, $popLevel;
+    }
+
+    # find a suitable Id for this section
+    my $sectionId = find_id($heading, \%sections);
 
     ### Convert the heading and print it out.
-    my $convert = $heading; process_text(\$convert, 0);
-    if ( $firstSect1 == 1 ) {
-        print SGML "<chapter id=\"$rootId\"><title>$convert</title>";
-        $firstSect1 = 0;
-      } else {
-        ### Create the section index...
-        my $sectionIndex = "";
-        for ( my $i = 1 ; $i <= $level ; $i++ ) {
-            $sectionIndex .= "$sectIndex[$i]";
-            if ( $i < $level ) {
-                $sectionIndex .= "-";
-              }
-          }
-        print SGML "<sect$level id=\"$rootId-sect-$sectionIndex\"><title>$convert</title>";
+    my $convert = $heading;
+    process_text(\$convert, 0);
 
-        ### Set the active sect level
-        push @sectStack, $level;
-        $sectActive = $level;
-      }
-    print SGML "\n<!-- Bogus hack to ensure that each sect has a paragraph in it -->\n";
-    print SGML "<para>\n</para>\n";
-    print SGML "\n\n";
+    print SGML <<"EOSGML";
+  <$sectNames[$level]  id="$rootId-$sectionId">
+    <title>$convert</title>
+EOSGML
 
-#    print STDERR "Sect stack: ";
-#    foreach my $stack ( @sectStack ) {
-#        print STDERR "$stack ";
-#      }
-#    print STDERR "\n";
+    ### Set the active sect level
+    push @sectStack, $level;
+    $sectActive = $level;
+
+    $needpara = 1; # remember to print a <para> next
 }
 
 #
-# process_item - convert a pod item tag and convert it to HTML format.
+# process_item - convert a pod item tag and convert it to SGML format.
 #
 sub process_item {
-    my $text = $_[0];
-    my($i, $quote, $name);
+  my ($text) = @_;
+  my($i, $quote, $name);
 
-    my $need_preamble = 0;
-    my $this_entry;
+  my $need_preamble = 0;
+  my $this_entry;
 
+  print_para_if_needed();
 
-    # lots of documents start a list without doing an =over.  this is
-    # bad!  but, the proper thing to do seems to be to just assume
-    # they did do an =over.  so warn them once and then continue.
-    warn "$0: $podfile: unexpected =item directive in paragraph $paragraph.  ignoring.\n"
-        unless $listlevel;
-    process_over() unless $listlevel;
+  # lots of documents start a list without doing an =over.  this is
+  # bad!  but, the proper thing to do seems to be to just assume
+  # they did do an =over.  so warn them once and then continue.
+  warn "$0: $podfile: unexpected =item directive in paragraph $paragraph.  ignoring.\n"
+    unless $listlevel;
+  process_over() unless $listlevel;
 
-    return unless $listlevel;
+  return unless $listlevel;
 
-    # remove formatting instructions from the text
-    1 while $text =~ s/[A-Z]<([^<>]*)>/$1/g;
-    pre_escape(\$text);
+  # remove formatting instructions from the text
+  1 while $text =~ s/[A-Z]<([^<>]*)>/$1/g;
+  pre_escape(\$text);
 
-    $need_preamble = $items_seen[$listlevel]++ == 0;
+  $need_preamble = $items_seen[$listlevel]++ == 0;
 
-    # check if this is the first =item after an =over
-    $i = $listlevel - 1;
-    my $need_new = $listlevel >= @listitem;
+  # check if this is the first =item after an =over  , NO
+  #    $i = $listlevel - 1;    , NO
+  # my $need_new = $listlevel >= @listitem;
 
-    if ( $text =~ /\A\*/ ) {        # bullet-point list
-        if ( $listitemActive == 1 ) {
-            print SGML "</listitem>\n";
-            $listitemActive = 0;
-          }
-        if ( $need_preamble ) {
-            push( @listend,  "</listitem></itemizedList>\n" );
-            print SGML "<itemizedList>\n";
-          }
-        print SGML "<listitem>";
-        $text =~ /\A\*\s*(.*)\Z/s;
-        $quote = 1;
-        #print SGML process_puretext($1, \$quote);
-        print SGML "<para>\n";
-        print SGML $1;
-        print SGML "</para>\n";
-        $listitemActive = 1;
-      } elsif ($text =~ /\A[0-9#]+/) {    # numbered list
-        if ( $listitemActive == 1 ) {
-            print SGML "</listitem>\n";
-            $listitemActive = 0;
-          }
-        if ($need_preamble) {
-            push( @listend,  "</listitem></orderedlist>\n" );
-            print SGML "<orderedList>\n";
-          }
-        print SGML "<listitem>\n";
-        $text =~ /\A[0-9]+\.?(.*)\Z/s;
-        $quote = 1;
-        #print SGML process_puretext($1, \$quote);
-        print SGML "<para>\n";
-        print SGML $1 if $1;
-        print SGML "</para>\n";
-        $listitemActive = 1;
-      } else {            # all others
-        if ( $listitemActive == 1 ) {
-            print SGML "</listitem></varlistentry>\n";
-            $listitemActive = 0;
-          }
-        if ( $need_preamble ) {
-            push( @listend,  "</listitem></varlistentry></variablelist>\n" );
-            print SGML "<variableList>\n";
-          }
-        print SGML "<varlistentry><term><emphasis>";
-        $quote = 1;
-        #print SGML process_puretext($text, \$quote);
-#        print SGML "<para>\n";
-        print SGML $text;
-#        print SGML "</para>\n";
-        print SGML "</emphasis></term>\n";
-        print SGML "<listitem><para></para>\n";
-        $listitemActive = 1;
-      }
+  if ( $text =~ /\A\*/ ) {        # bullet-point list
+    if ( $listitemActive == 1 ) {
+      print SGML "</listitem>\n";
+      $listitemActive = 0;
+    }
+    if ( $need_preamble ) {
+      push( @listend,  "</listitem></itemizedList>\n" );
+      print SGML "<itemizedList>\n";
+    }
 
-    print SGML "\n";
+    $text =~ /\A\*\s*(.*?)\s*\Z/s;
+    my $itemId = "id=\"$rootId-".find_id($1, \%items)."\"" if $1;
+    print SGML "<listitem $itemId>\n";
+    if ($1) {
+      print SGML "<para>";
+      print SGML $1;
+      print SGML "</para>\n";
+    } else {
+      $needpara = 1;
+    }
+    $listitemActive = 1;
+
+  } elsif ( $text =~ /\A[0-9\#]+/ ) {    # numbered list
+
+    if ( $listitemActive == 1 ) {
+      print_para_if_needed();
+      print SGML "</listitem>\n";
+      $listitemActive = 0;
+    }
+    if ($need_preamble) {
+      push( @listend,  "</listitem></orderedlist>\n" );
+      print SGML "<orderedList>\n";
+    }
+
+    $text =~ /\A[0-9]+\.?(.*?)\s*\Z/s;
+    my $itemId = "id=\"$rootId-".find_id($1, \%items)."\"" if $1;
+    print SGML "<listitem $itemId>\n";
+    if ($1) {
+      print SGML "<para>\n";
+      print SGML $1;
+      print SGML "</para>\n";
+    } else {
+      $needpara = 1;
+    }
+    $listitemActive = 1;
+
+  } else { # all others. just stick everything into the <varlistentry>
+
+    if ( $listitemActive == 1 ) {
+      print_para_if_needed();
+      print SGML "</listitem></varlistentry>\n";
+      $listitemActive = 0;
+    }
+    if ( $need_preamble ) {
+      push( @listend,  "</listitem></varlistentry></variablelist>\n" );
+      print SGML "<variableList>\n";
+    }
+
+    $text =~ /\A\s*(.*?)\s*\Z/s;
+    my $itemId = "id=\"$rootId-".find_id($1, \%items)."\"" if $1;
+    print SGML "<varlistentry $itemId>\n";
+    print SGML "<term><emphasis>";
+    print SGML $1 if $1;
+    print SGML "</emphasis></term>\n";
+    print SGML "<listitem>\n";
+    $needpara = 1;  # need a <para></para> soon...
+    $listitemActive = 1;
   }
 
+  print SGML "\n";
+}
+
 #
-# process_over - process a pod over tag and start a corresponding HTML
+# process_over - process a pod over tag and start a corresponding SGML
 # list.
 #
 sub process_over {
+    # look whether we are in a nested list
+    if ($listlevel) {
+      print SGML "<!-- nested at level $listlevel -->\n";
+#      push( @listend,  "</listitem> <!-- nested at level $listlevel -->\n" );
+
+    }
     # start a new list
+
     $listlevel++;
+    $listitemActive = 0;
 }
 
 #
-# process_back - process a pod back tag and convert it to HTML format.
+# process_back - process a pod back tag and convert it to SGML format.
 #
 sub process_back {
     warn "$0: $podfile: unexpected =back directive in paragraph $paragraph.  ignoring.\n"
@@ -714,6 +955,8 @@ sub process_back {
     # defined because an =item directive may have never appeared and thus
     # $listend[$listlevel] may have never been initialized.
     $listlevel--;
+
+    print_para_if_needed();
     print SGML $listend[$listlevel] if defined $listend[$listlevel];
     print SGML "\n";
 
@@ -724,7 +967,8 @@ sub process_back {
 
     pop(@items_seen);
 
-    $listitemActive = 0;
+    # If we were inside a nested list, we need to close its <listitem>
+    $listitemActive = ($listlevel > 0);
 }
 
 #
@@ -743,12 +987,14 @@ sub process_pod {
 }
 
 #
-# process_for - process a =for pod tag.  if it's for html, split
-# it out verbatim, otherwise ignore it.
+# process_for - process a =for pod tag.  if it's for (pod2)docbook or
+# sgml, split it out verbatim, otherwise ignore it.
 #
 sub process_for {
     my($whom, $text) = @_;
-    if ( $whom =~ /^(pod2)?docbook$/i) {
+
+    print_para_if_needed();
+    if ( $whom =~ /^(pod2)?docbook|sgml$/i) {
     print SGML $text;
     } 
 }
@@ -760,9 +1006,12 @@ sub process_for {
 #
 sub process_begin {
     my ( $whom, $text ) = @_;
+
+    print_para_if_needed();
+
     $whom = lc( $whom );
     push ( @begin_stack, $whom );
-    if ( $whom =~ /^(pod2)?docbook$/) {
+    if ( $whom =~ /^(pod2)?docbook|sgml$/) {
 #        print STDERR "Dumping raw SGML: $text\n";
         print SGML $text if $text;
       } else {
@@ -786,7 +1035,7 @@ sub process_end {
 #
 # process_text - handles plaintext that appears in the input pod file.
 # there may be pod commands embedded within the text so those must be
-# converted to html commands.
+# converted to docbook commands.
 #
 sub process_text {
     my($text, $escapeQuotes) = @_;
@@ -799,167 +1048,160 @@ sub process_text {
     $result = "";
     $rest = $$text;
 
+    $rest =~ s/\n+$//;    # cut of trailing paragraph separators
+
     if ($rest =~ /^\s+/) {    # preformatted text, no pod directives
-    $rest =~ s/\n+\Z//;
-    $rest =~ s#.*#
+      $rest =~ s/\n+\Z//;
+      $rest =~ s#.*#
         my $line = $&;
-        1 while $line =~ s/\t+/' ' x (length($&) * 8 - length($`) % 8)/e;
-        $line;
-    #eg;
+      1 while $line =~ s/\t+/' ' x (length($&) * 8 - length($`) % 8)/e;
+      $line;
+      #eg;
 
-    $rest   =~ s/&/&amp;/g;
-    $rest   =~ s/</&lt;/g;
-    $rest   =~ s/>/&gt;/g;
-#    $rest   =~ s/"/&quot;/g;
+      $rest   =~ s/&/&amp;/g;
+      $rest   =~ s/</&lt;/g;
+      $rest   =~ s/>/&gt;/g;
+      #    $rest   =~ s/"/&quot;/g;
 
-    # try and create links for all occurrences of perl.* within
-    # the preformatted text.
-    $rest =~ s{
-            (\s*)(perl\w+)
-          }{
-            if (defined $pages{$2}) {    # is a link
-            qq($1$2);
-            } else {
-            "$1$2";
-            }
-          }xeg;
-    $rest =~ s/()([^>:]*:)?([^>:]*)\.pod:([^>:]*:)?/$1$3.html/g;
+      # no special "perl" links are recognized. Hey, they'd have to be
+      # defined inside the SGML doc to be of any use... use L<> if you
+      # really need these.
 
-  my $urls = '(' . join ('|', qw{
-                http
-                telnet
-        mailto
-        news
-                gopher
-                file
-                wais
-                ftp
-            } ) 
+      my $urls = '(' . join ('|', qw{
+				     http
+				     telnet
+				     mailto
+				     news
+				     gopher
+				     file
+				     wais
+				     ftp
+				    } )
         . ')';
-  
-  my $ltrs = '\w';
-  my $gunk = '/#~:.?+=&%@!\-';
-  my $punc = '.:?\-';
-  my $any  = "${ltrs}${gunk}${punc}";
 
-  $rest =~ s{
-        \b                          # start at word boundary
-        (                           # begin $1  {
-          $urls     :               # need resource and a colon
-          [$any] +?                 # followed by on or more
-                                    #  of any valid character, but
-                                    #  be conservative and take only
-                                    #  what you need to....
-        )                           # end   $1  }
-        (?=                         # look-ahead non-consumptive assertion
-                [$punc]*            # either 0 or more puntuation
-                [^$any]             #   followed by a non-url char
-            |                       # or else
-                $                   #   then end of the string
-        )
-      }{$1}igox;
+      my $ltrs = '\w';
+      my $gunk = '/#~:.?+=&%@!\-';
+      my $punc = '.:?\-';
+      my $any  = "${ltrs}${gunk}${punc}";
 
-    $result =   "<screen>\n"    # text should be as it is (verbatim)
-          . "$rest\n"
+      $rest =~ s{
+		 \b		# start at word boundary
+		 (		# begin $1  {
+		  $urls     :	# need resource and a colon
+		  [$any] +?	# followed by one or more
+                                #  of any valid character, but
+		                #  be conservative and take only
+		                #  what you need to....
+		 )		# end   $1  }
+		 (?=		# look-ahead non-consumptive assertion
+		  [$punc]*	# either 0 or more puntuation
+		  [^$any]	#   followed by a non-url char
+		  |		# or else
+		  $		#   then end of the string
+		 )
+		}{$1}igox;
+
+      $result =   "<screen>\n"	# text should be as it is (verbatim)
+	. "$rest\n"
           . "</screen>\n\n";
-    } else {            # formatted text
-    # parse through the string, stopping each time we find a
-    # pod-escape.  once the string has been throughly processed
-    # we can output it.
-    while ( length $rest) {
+    } else {			# formatted text
+      # parse through the string, stopping each time we find a
+      # pod-escape.  once the string has been throughly processed
+      # we can output it.
+      while ( length $rest) {
         # check to see if there are any possible pod directives in
         # the remaining part of the text.
         if ($rest =~ m/[BCEIFLSZ]</) {
-        warn "\$rest\t= $rest\n" unless
+	  warn "\$rest\t= $rest\n" unless
             $rest =~ /\A
-               ([^<]*?)
-               ([BCEIFLSZ]?)
-               <
-               (.*)\Z/xs;
+	      ([^<]*?)
+		([BCEIFLSZ]?)
+		  <
+		    (.*)\Z/xs;
 
-        $s1 = $1;    # pure text
-        $s2 = $2;    # the type of pod-escape that follows
-        $s3 = '<';    # '<'
-        $s4 = $3;    # the rest of the string
+	  $s1 = $1;		# pure text
+	  $s2 = $2;		# the type of pod-escape that follows
+	  $s3 = '<';		# '<'
+	  $s4 = $3;		# the rest of the string
         } else {
-        $s1 = $rest;
-        $s2 = "";
-        $s3 = "";
-        $s4 = "";
+	  $s1 = $rest;
+	  $s2 = "";
+	  $s3 = "";
+	  $s4 = "";
         }
 
-        if ($s3 eq '<' && $s2) {    # a pod-escape
-        $result    .= ($escapeQuotes ? process_puretext($s1, \$quote) : $s1);
-        $podcommand = "$s2<";
-        $rest       = $s4;
+        if ($s3 eq '<' && $s2) { # a pod-escape
+	  $result    .= ($escapeQuotes ? process_puretext($s1, \$quote) : $s1);
+	  $podcommand = "$s2<";
+	  $rest       = $s4;
 
-        # find the matching '>'
-        $match = 1;
-        $bf = 0;
-        while ($match && !$bf) {
+	  # find the matching '>'
+	  $match = 1;
+	  $bf = 0;
+	  while ($match && !$bf) {
             $bf = 1;
             if ($rest =~ /\A([^<>]*[BCEIFLSZ]<)(.*)\Z/s) {
-            $bf = 0;
-            $match++;
-            $podcommand .= $1;
-            $rest        = $2;
+	      $bf = 0;
+	      $match++;
+	      $podcommand .= $1;
+	      $rest        = $2;
             } elsif ($rest =~ /\A([^>]*>)(.*)\Z/s) {
-            $bf = 0;
-            $match--;
-            $podcommand .= $1;
-            $rest        = $2;
+	      $bf = 0;
+	      $match--;
+	      $podcommand .= $1;
+	      $rest        = $2;
             }
-        }
+	  }
 
-        if ($match != 0) {
+	  if ($match != 0) {
             warn <<WARN;
 $0: $podfile: cannot find matching > for $s2 in paragraph $paragraph.
 WARN
-            $result .= substr $podcommand, 0, 2;
+		$result .= substr $podcommand, 0, 2;
             $rest = substr($podcommand, 2) . $rest;
             next;
-        }
+	  }
 
-        # pull out the parameters to the pod-escape
-        $podcommand =~ /^([BCFEILSZ]?)<(.*)>$/s;
-        $tag    = $1;
-        $params = $2;
+	  # pull out the parameters to the pod-escape
+	  $podcommand =~ /^([BCFEILSZ]?)<(.*)>$/s;
+	  $tag    = $1;
+	  $params = $2;
 
-        # process the text within the pod-escape so that any escapes
-        # which must occur do.
-        process_text(\$params, 0) unless $tag eq 'L';
+	  # process the text within the pod-escape so that any escapes
+	  # which must occur do.
+	  process_text(\$params, 0) unless $tag eq 'L';
 
-        $s1 = $params;
-        if (!$tag || $tag eq " ") {    #  <> : no tag
+	  $s1 = $params;
+	  if (!$tag || $tag eq " ") { #  <> : no tag
             $s1 = "&lt;$params&gt;";
-        } elsif ($tag eq "L") {        # L<> : link 
+	  } elsif ($tag eq "L") { # L<> : link 
             $s1 = process_L($params);
-        } elsif ($tag eq "I" ||        # I<> : italicize text
-             $tag eq "B" ||        # B<> : bold text
-             $tag eq "F") {        # F<> : file specification
+	  } elsif ($tag eq "I" || # I<> : italicize text
+		   $tag eq "B" || # B<> : bold text
+		   $tag eq "F") { # F<> : file specification
             $s1 = process_BFI($tag, $params);
-        } elsif ($tag eq "C") {        # C<> : literal code
+	  } elsif ($tag eq "C") { # C<> : literal code
             $s1 = process_C($params, 1);
-        } elsif ($tag eq "E") {        # E<> : escape
+	  } elsif ($tag eq "E") { # E<> : escape
             $s1 = process_E($params);
-        } elsif ($tag eq "Z") {        # Z<> : zero-width character
+	  } elsif ($tag eq "Z") { # Z<> : zero-width character
             $s1 = process_Z($params);
-        } elsif ($tag eq "S") {        # S<> : non-breaking space
+	  } elsif ($tag eq "S") { # S<> : non-breaking space
             $s1 = process_S($params);
-        } elsif ($tag eq "X") {        # S<> : non-breaking space
+	  } elsif ($tag eq "X") { # S<> : non-breaking space
             $s1 = process_X($params);
-        } else {
+	  } else {
             warn "$0: $podfile: unhandled tag '$tag' in paragraph $paragraph\n";
-        }
+	  }
 
-        $result .= "$s1";
+	  $result .= "$s1";
         } else {
-        # for pure text we must deal with implicit links and
-        # double-quotes among other things.
-        $result .= ($escapeQuotes ? process_puretext("$s1$s2$s3", \$quote) : "$s1$s2$s3");
-        $rest    = $s4;
+	  # for pure text we must deal with implicit links and
+	  # double-quotes among other things.
+	  $result .= ($escapeQuotes ? process_puretext("$s1$s2$s3", \$quote) : "$s1$s2$s3");
+	  $rest    = $s4;
         }
-    }
+      }
     }
     $$text = $result;
 }
@@ -985,7 +1227,7 @@ sub process_puretext {
     $text =~ s/\A([^"]*)"/$1''/s if $$quote;
     while ($text =~ s/\A([^"]*)["]([^"]*)["]/$1``$2''/sg) {}
 
-    $$quote = ($text =~ m/"/ ? 1 : 0);
+    $$quote = ($text =~ m/"/ ? 1 : 0); #" (cperl-mode needs this..)
     $text =~ s/\A([^"]*)"/$1``/s if $$quote;
 
     # keep track of leading and trailing white-space
@@ -1002,20 +1244,6 @@ sub process_puretext {
     if ($word =~ /^\w+\(/) {
         # has parenthesis so should have been a C<> ref
         $word = process_C($word);
-#        $word =~ /^[^()]*]\(/;
-#        if (defined $items{$1} && $items{$1}) {
-#        $word =   "\n<CODE><A HREF=\"$htmlroot/$items{$1}#item_"
-#            . htmlify(0,$word)
-#            . "\">$word</A></CODE>";
-#        } elsif (defined $items{$word} && $items{$word}) {
-#        $word =   "\n<CODE><A HREF=\"$htmlroot/$items{$word}#item_"
-#            . htmlify(0,$word)
-#            . "\">$word</A></CODE>";
-#        } else {
-#        $word =   "\n<CODE><A HREF=\"#item_"
-#            . htmlify(0,$word)
-#            . "\">$word</A></CODE>";
-#        }
     } elsif ($word =~ /^[\$\@%&*]+\w+$/) {
         # perl variables, should be a C<> ref
         $word = process_C($word, 1);
@@ -1056,103 +1284,98 @@ sub pre_escape {
 }
 
 #
-# process_L - convert a pod L<> directive to a corresponding HTML link.
-#  most of the links made are inferred rather than known about directly
-#  (i.e it's not known whether the =head\d section exists in the target file,
-#   or whether a .pod file exists in the case of split files).  however, the
-#  guessing usually works.
+# process_L - convert a pod L<> directive to a corresponding SGML
+# link. Since SGML won't do references across file
+# borders, guessing a filename somewhere else is pretty in vain.
 #
 # Unlike the other directives, this should be called with an unprocessed
 # string, else tags in the link won't be matched.
 #
 sub process_L {
-    my($str) = @_;
-    my($s1, $s2, $linktext, $page, $section, $link);    # work strings
+  my($str) = @_;
+  my($s1, $s2, $page, $section); # work strings
+  my $linktext; # the textual representation for the link
+  my $link;     # the referenced Id
 
-    $str =~ s/\n/ /g;            # undo word-wrapped tags
-    $s1 = $str;
-    for ($s1) {
-    # a :: acts like a /
-    s,::,/,;
+  for ($str) {
+    s/\n/ /g;		# undo word-wrapped tags
 
+    # check for explicit linktext
+    if (m,(.*)\|(.*),) {
+      $linktext = $1;
+      $_ = $2;
+    }
     # make sure sections start with a /
     s,^",/",g;
     s,^,/,g if (!m,/, && / /);
 
     # check if there's a section specified
-    if (m,^(.*?)/"?(.*?)"?$,) {    # yes
-        ($page, $section) = ($1, $2);
-    } else {            # no
-        ($page, $section) = ($str, "");
+    if (m,^(.*?)/"?(.*?)"?$,) {	# yes
+      ($page, $section) = ($1, $2);
+    } else {			# no
+      ($page, $section) = ($str, "");
     }
 
-    # check if we know that this is a section in this page
-    if (!defined $pages{$page} && defined $sections{$page}) {
-        $section = $page;
-        $page = "";
+    # check if the "page" is rather  a section in this page
+    if (defined $sections{sgmlify($page)} or
+	defined $items{sgmlify($page)}) {
+      $section = $page;
+      $page = "";
     }
-    }
+  }
 
-    if ($page eq "") {
-    $link = "#" . htmlify(0,$section);
-    $linktext = $section;
-    } elsif (!defined $pages{$page}) {
-    warn "$0: $podfile: cannot resolve L<$str> in paragraph $paragraph: no such page '$page'\n";
-    $link = "";
-    $linktext = $page;
+  if (!$page) {
+    # some kind of LOCAL reference
+    $link = sgmlify($section);
+    if ($sections{$link} ||
+	$items{$link}) {
+      $link = "$rootId-$link";
+      $linktext = $section unless defined($linktext);
     } else {
-    $linktext  = ($section ? "$section" : "the $page manpage");
-    $section = htmlify(0,$section) if $section ne "";
-
-    # if there is a directory by the name of the page, then assume that an
-    # appropriate section will exist in the subdirectory
-    if ($section ne "" && $pages{$page} =~ /([^:]*[^(\.pod|\.pm)]):/) {
-        $link = "$htmlroot/$1/$section.html";
-
-    # since there is no directory by the name of the page, the section will
-    # have to exist within a .html of the same name.  thus, make sure there
-    # is a .pod or .pm that might become that .html
+      warn "$0: $podfile: cannot resolve L<$str> in paragraph $paragraph: no such (local) section or item '$section')\n";
+    }
+  } else {
+    # anything else can't be checked right now.
+    my $otherroot = sgmlify($page);
+    if ($section) {
+      $link = $otherroot."-".sgmlify($section);
+      $linktext =  $section unless defined($linktext);
     } else {
-        $section = "#$section";
-        # check if there is a .pod with the page name
-        if ($pages{$page} =~ /([^:]*)\.pod:/) {
-        $link = "$htmlroot/$1.html$section";
-        } elsif ($pages{$page} =~ /([^:]*)\.pm:/) {
-        $link = "$htmlroot/$1.html$section";
-        } else {
-        warn "$0: $podfile: cannot resolve L$str in paragraph $paragraph: ".
-                 "no .pod or .pm found\n";
-        $link = "";
-        $linktext = $section;
-        }
+      $link = "$otherroot";
+      $linktext = "the $page manpage" unless defined($linktext); # yuck.
     }
-    }
+  }
 
-    process_text(\$linktext, 0);
-    $s1 = "<emphasis>$linktext</emphasis>";
-    return $s1;
+  process_text(\$linktext, 0);
+  $s1 = "<link linkend=\"$link\">$linktext</link>";
+  return $s1;
 }
 
 #
 # process_BFI - process any of the B<>, F<>, or I<> pod-escapes and
-# convert them to corresponding HTML directives.
+# convert them to corresponding docbook directives.  Trouble is that
+# DocBook has no explicit visual markups. So we use <emphhasis> with
+# different roles for both B<> and I<>.
 #
+
 sub process_BFI {
     my($tag, $str) = @_;
     my($s1);            # work string
     my(%repltext) = (
-        'B' => 'emphasis',
-        'F' => 'emphasis',
-        'I' => 'emphasis'
+        'B' => "<emphasis role=\"bold\">$str</emphasis>",
+        'F' => "<filename>$str</filename>",
+        'I' => "<emphasis role=\"italic\">$str</emphasis>"
       );
 
-    # extract the modified text and convert to HTML
-    $s1 = "<$repltext{$tag}>$str</$repltext{$tag}>";
+    # extract the modified text and convert to docbook
+    $s1 = $repltext{$tag};
     return $s1;
 }
 
 #
 # process_C - process the C<> pod-escape.
+# This is supposed to contain CODE. Somehow it is being used in Pod::HTML for
+# referencing items as well?
 #
 sub process_C {
     my($str, $doref) = @_;
@@ -1163,18 +1386,7 @@ sub process_C {
     $s2 = $s1;
     $s1 =~ s/\W//g;        # delete bogus characters
 
-    # if there was a pod file that we found earlier with an appropriate
-    # =item directive, then create a link to that page.
-#    if ($doref && defined $items{$s1}) {
-#    $s1 = ($items{$s1} ?
-#           "<A HREF=\"$htmlroot/$items{$s1}#item_" . htmlify(0,$s2) .  "\">$str</A>" :
-#           "<A HREF=\"#item_" . htmlify(0,$s2) .  "\">$str</A>");
-#    $s1 =~ s,(perl\w+/(\S+)\.html)#item_\2\b,$1,; 
-#    confess "s1 has space: $s1" if $s1 =~ /HREF="[^"]*\s[^"]*"/;
-#    } else {
-    $s1 = "<literal>$str</literal>";
-    # warn "$0: $podfile: cannot resolve C<$str> in paragraph $paragraph\n" if $verbose
-#    }
+    $s1 = "<literal role=\"code\">$str</literal>";
 
     return $s1;
 }
@@ -1199,19 +1411,19 @@ sub process_E {
 sub process_Z {
     my($str) = @_;
 
-    # there is no equivalent in HTML for this so just ignore it.
+    # there is no equivalent in SGML for this so just ignore it.
     $str = "";
     return $str;
 }
 
 #
 # process_S - process the S<> pod directive which means to convert all
-# spaces in the string to non-breaking spaces (in HTML-eze).
+# spaces in the string to non-breaking spaces (in SGML/HTML-eze).
 #
 sub process_S {
     my($str) = @_;
 
-    # convert all spaces in the text to non-breaking spaces in HTML.
+    # convert all spaces in the text to non-breaking spaces in SGML.
     $str =~ s/ /&nbsp;/g;
     return $str;
 }
@@ -1226,42 +1438,72 @@ sub process_X {
 
 
 #
-# finish_list - finish off any pending HTML lists.  this should be called
+# finish_list - finish off any pending SGML lists.  this should be called
 # after the entire pod file has been read and converted.
 #
 sub finish_list {
-    while ($listlevel >= 0) {
-#    print SGML "</DL>\n";
+  print_para_if_needed();
+  while ($listlevel >= 0) {
+    #    print SGML "</DL>\n";
     $listlevel--;
-    }
+  }
 }
 
 #
-# htmlify - converts a pod section specification to a suitable section
-# specification for HTML.  if first arg is 1, only takes 1st word.
+# find_id find a suitable Id for this section/item/whatever. This Id
+# should already be in the index hash.
 #
-sub htmlify {
-    my($compact, $heading) = @_;
+sub find_id {
+  my ($heading, $index) = @_;
+  my $tryId = sgmlify($heading);
+    if ($$index{$tryId} ne $heading) {
+      # some kind of collision ocurred... find the real Id for the
+      # section/item
+      $tryId = undef;
+    IDLOOP:
+      for my $otherid (keys(%$index)) {
+	if ($heading eq $$index{$otherid}) {
+	  $tryId = $otherid;
+	  last IDLOOP;
+	}
+      }
+      die "$0: can't find Id for section/item '$heading' after collision"
+	unless $tryId;
+    }
+  return $tryId;
+}
 
-    if ($compact) {
-      $heading =~ /^(\w+)/;
-      $heading = $1;
-    } 
 
-  # $heading = lc($heading);
-  $heading =~ s/[^\w\s]/_/g;
-  $heading =~ s/(\s+)/ /g;
-  $heading =~ s/^\s*(.*?)\s*$/$1/s;
-  $heading =~ s/ /_/g;
-  $heading =~ s/\A(.{32}).*\Z/$1/s;
-  $heading =~ s/\s+\Z//;
-  $heading =~ s/_{2,}/_/g;
-
+#
+# sgmlify - converts a pod section specification to a suitable section
+# specification for SGML.
+#
+sub sgmlify {
+  my ($heading) = @_;
+  $heading = lc($heading);
+  $heading =~ s/[^\w]/-/g;
+  $heading =~ s/[_-]+/-/g;
+  $heading = substr($heading, 0, 16).".." if (length($heading) > 16);
   return $heading;
 }
+
+
+sub print_para_if_needed () {
+  if ($needpara) {
+    print SGML <<"EOSGML";
+
+<!-- Bogus hack to ensure that each sect has a paragraph in it -->
+<para></para>
+
+EOSGML
+  $needpara = 0;
+  }
+}
+
 
 BEGIN {
 }
 
 1;
+
 
