@@ -1,7 +1,7 @@
 #
 # $Id$
 #
-# Copyright (c)1998 Alligator Descartes <descarte@arcana.co.uk>
+# Copyright (c)1998-1999 Alligator Descartes <descarte@arcana.co.uk>
 # Original Portions Copyright (c)Tom Christiansen
 #
 # $Log$
@@ -14,7 +14,7 @@ require Exporter;
 @ISA = Exporter;
 @EXPORT = qw( pod2docbook );
 use Cwd;
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 use Carp;
 
@@ -133,6 +133,9 @@ my $noheader = 0;
 my $nofooter = 0;
 
 my $firstSect1 = 1;
+
+### Setup the section indices...
+my @sectIndex = ( 'X', 1, 'a', 1, 'a', 1, 'a' );
 
 my $rootId = "pod2docbook-ch-1";
 
@@ -562,6 +565,12 @@ sub process_head {
 #        print STDERR "Popping sectStack: $popLevel\t$#sectStack\n";
         print SGML "</sect$popLevel>";
         print SGML "\n\n";
+        if ( ( $popLevel ) % 2 == 0 ) {
+            $sectIndex[$popLevel+1] = 1;
+          } else {
+            $sectIndex[$popLevel+1] = 'a';
+          }
+        $sectIndex[$popLevel]++;
         $popLevel = pop @sectStack;
       }
     if ( defined $popLevel ) {
@@ -574,7 +583,15 @@ sub process_head {
         print SGML "<chapter id=\"$rootId\"><title>$convert</title>";
         $firstSect1 = 0;
       } else {
-        print SGML "<sect$level id=\"$rootId-sect-\"><title>$convert</title>";
+        ### Create the section index...
+        my $sectionIndex = "";
+        for ( my $i = 1 ; $i <= $level ; $i++ ) {
+            $sectionIndex .= "$sectIndex[$i]";
+            if ( $i < $level ) {
+                $sectionIndex .= "-";
+              }
+          }
+        print SGML "<sect$level id=\"$rootId-sect-$sectionIndex\"><title>$convert</title>";
 
         ### Set the active sect level
         push @sectStack, $level;
