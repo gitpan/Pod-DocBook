@@ -11,7 +11,7 @@ use Config;
 
 %opts = (
 	'NAME'=> 'Pod::DocBook',
-	'VERSION' => '0.01',
+	'VERSION_FROM' => 'DocBook.pm',
 	'EXE_FILES' => [ 'pod2docbook' ],
 	'dist' => { 'COMPRESS' => 'gzip -v -9 -f', 'SUFFIX' => '.gz' },
   );

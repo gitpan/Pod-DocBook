@@ -14,6 +14,7 @@ require Exporter;
 @ISA = Exporter;
 @EXPORT = qw( pod2docbook );
 use Cwd;
+$VERSION = '0.02';
 
 use Carp;
 
