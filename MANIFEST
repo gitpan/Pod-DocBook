@@ -1,5 +1,6 @@
 README
 MANIFEST
+CHANGES
 Makefile.PL
 DocBook.pm
 pod2docbook

@@ -14,7 +14,7 @@ require Exporter;
 @ISA = Exporter;
 @EXPORT = qw( pod2docbook );
 use Cwd;
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 use Carp;
 
@@ -79,6 +79,13 @@ Doesn't write a default header out for the DTD.
 
 Doesn't write a default footer out for the DTD.
 
+=item root-id
+
+    --root-id
+
+Specifies the root identifier for the base element used in chapter and section
+tags. The default is I<pod2docbook-ch-1>.
+
 =item verbose
 
     --verbose
@@ -96,7 +103,8 @@ Display progress messages.
 
 Alligator Descartes E<lt>descarte@arcana.co.ukE<gt> from the original
 L<pod2html> source code by Tom Christiansen, E<lt>tchrist@perl.comE<gt>,
-for it is he.
+for it is he. Many thanks to Chris Maden of O'Reilly & Associations for
+doing serious road-testing on this module.
 
 =head1 BUGS
 
@@ -123,6 +131,10 @@ my $listitemActive = 0;
 
 my $noheader = 0;
 my $nofooter = 0;
+
+my $firstSect1 = 1;
+
+my $rootId = "pod2docbook-ch-1";
 
 my @begin_stack = ();        # begin/end stack
 
@@ -283,7 +295,7 @@ sub pod2docbook {
 
     if ( $noheader == 0 ) {
         print SGML <<END_OF_HEAD;
-<!DOCTYPE book PUBLIC "-//Davenport//DTD DocBook V2.4.1//EN""/opt/texmf/gmat/sgml/Davenport/dtds/2.4.1/docbook.dtd">
+<!DOCTYPE book PUBLIC "-//Davenport//DTD DocBook V2.4.1//EN" "/opt/texmf/gmat/sgml/Davenport/dtds/2.4.1/docbook.dtd">
 <!-- -->
 <!-- \$Id\$ -->
 <!-- -->
@@ -293,7 +305,7 @@ sub pod2docbook {
 
 <book>
 
-<chapter id="pod2docbook-CH-1"><title>$title</title>
+<chapter id="$rootId"><title>$title</title>
 END_OF_HEAD
       }
 
@@ -371,6 +383,7 @@ END_OF_HEAD
         print SGML "</sect$popLevel>\n\n";
         $popLevel = pop @sectStack;
       }
+    print SGML "</chapter>\n\n";
 
     if ( $nofooter == 0 ) {
         print SGML <<END_OF_TAIL;
@@ -398,7 +411,7 @@ sub usage {
 
 $usage =<<END_OF_USAGE;
 Usage:  $0 --help --infile=<name> --outfile=<name> --verbose
-           --title=<title>
+           --title=<title> --root-id=<root id>
 
   --help       - prints this message.
   --infile     - filename for the pod to convert (input taken from stdin
@@ -408,13 +421,14 @@ Usage:  $0 --help --infile=<name> --outfile=<name> --verbose
   --title      - title that will appear in resulting html file.
   --no-header  - Doesn't write a header out for the SGML file
   --no-footer  - Doesn't write a footer out for the SGML file
+  --root-id    - Specifies the root identifier for chapter and section tags
   --verbose    - self-explanatory
 
 END_OF_USAGE
 
 sub parse_command_line {
     my ( $opt_help, $opt_infile, $opt_outfile, 
-         $opt_title, $opt_verbose, $opt_header, $opt_footer );
+         $opt_title, $opt_verbose, $opt_header, $opt_footer, $opt_rootId );
     my $result = GetOptions(
                 'help'       => \$opt_help,
                 'infile=s'   => \$opt_infile,
@@ -422,6 +436,7 @@ sub parse_command_line {
                 'title=s'    => \$opt_title,
                 'no-header' => \$opt_header,
                 'no-footer' => \$opt_footer,
+                'root-id=s'   => \$opt_rootId,
                 'verbose'    => \$opt_verbose,
                );
     usage("-", "invalid parameters") if not $result;
@@ -435,265 +450,13 @@ sub parse_command_line {
     $noheader = 1 if defined $opt_header;
     $nofooter = 1 if defined $opt_footer;
 
+    $rootId = $opt_rootId if defined $opt_rootId;
+
     $title    = $opt_title if defined $opt_title;
     $verbose  = defined $opt_verbose ? 1 : 0;
 }
 
 
-#my $saved_cache_key;
-#
-#sub get_cache {
-#    my($dircache, $itemcache, $podpath, $podroot, $recurse) = @_;
-#    my @cache_key_args = @_;
-#
-#    # A first-level cache:
-#    # Don't bother reading the cache files if they still apply
-#    # and haven't changed since we last read them.
-#
-#    my $this_cache_key = cache_key(@cache_key_args);
-#
-#    return if $saved_cache_key and $this_cache_key eq $saved_cache_key;
-#
-#    # load the cache of %pages and %items if possible.  $tests will be
-#    # non-zero if successful.
-#    my $tests = 0;
-#    if (-f $dircache && -f $itemcache) {
-#    warn "scanning for item cache\n" if $verbose;
-#    $tests = load_cache($dircache, $itemcache, $podpath, $podroot);
-#    }
-#
-#    # if we didn't succeed in loading the cache then we must (re)build
-#    #  %pages and %items.
-#    if (!$tests) {
-#    warn "scanning directories in pod-path\n" if $verbose;
-#    scan_podpath($podroot, $recurse, 0);
-#    }
-#    $saved_cache_key = cache_key(@cache_key_args);
-#}
-#
-#sub cache_key {
-#    my($dircache, $itemcache, $podpath, $podroot, $recurse) = @_;
-#    return join('!', $dircache, $itemcache, $recurse,
-#        @$podpath, $podroot, stat($dircache), stat($itemcache));
-#}
-#
-#
-# load_cache - tries to find if the caches stored in $dircache and $itemcache
-#  are valid caches of %pages and %items.  if they are valid then it loads
-#  them and returns a non-zero value.
-#
-#
-#sub load_cache {
-#    my($dircache, $itemcache, $podpath, $podroot) = @_;
-#    my($tests);
-#    local $_;
-#
-#    $tests = 0;
-#
-#    open(CACHE, "<$itemcache") ||
-#    die "$0: error opening $itemcache for reading: $!\n";
-#    $/ = "\n";
-#
-#    # is it the same podpath?
-#    $_ = <CACHE>;
-#    chomp($_);
-#    $tests++ if (join(":", @$podpath) eq $_);
-#
-#    # is it the same podroot?
-#    $_ = <CACHE>;
-#    chomp($_);
-#    $tests++ if ($podroot eq $_);
-#
-#    # load the cache if its good
-#    if ($tests != 2) {
-#    close(CACHE);
-#    return 0;
-#    }
-#
-#    warn "loading item cache\n" if $verbose;
-#    while (<CACHE>) {
-#    /(.*?) (.*)$/;
-#    $items{$1} = $2;
-#    }
-#    close(CACHE);
-#
-#    warn "scanning for directory cache\n" if $verbose;
-#    open(CACHE, "<$dircache") ||
-#    die "$0: error opening $dircache for reading: $!\n";
-#    $/ = "\n";
-#    $tests = 0;
-#
-#    # is it the same podpath?
-#    $_ = <CACHE>;
-#    chomp($_);
-#    $tests++ if (join(":", @$podpath) eq $_);
-#
-#    # is it the same podroot?
-#    $_ = <CACHE>;
-#    chomp($_);
-#    $tests++ if ($podroot eq $_);
-#
-#    # load the cache if its good
-#    if ($tests != 2) {
-#    close(CACHE);
-#    return 0;
-#    }
-#
-#    warn "loading directory cache\n" if $verbose;
-#    while (<CACHE>) {
-#    /(.*?) (.*)$/;
-#    $pages{$1} = $2;
-#    }
-#
-#    close(CACHE);
-#
-#    return 1;
-#}
-#
-#
-# scan_podpath - scans the directories specified in @podpath for directories,
-#  .pod files, and .pm files.  it also scans the pod files specified in
-#  @libpods for =item directives.
-#
-#sub scan_podpath {
-#    my($podroot, $recurse, $append) = @_;
-#    my($pwd, $dir);
-#    my($libpod, $dirname, $pod, @files, @poddata);
-#
-#    unless($append) {
-#    %items = ();
-#    %pages = ();
-#    }
-#
-#    # scan each directory listed in @podpath
-#    $pwd = getcwd();
-#    chdir($podroot)
-#    || die "$0: error changing to directory $podroot: $!\n";
-#    foreach $dir (@podpath) {
-#    scan_dir($dir, $recurse);
-#    }
-#
-#    # scan the pods listed in @libpods for =item directives
-#    foreach $libpod (@libpods) {
-#    # if the page isn't defined then we won't know where to find it
-#    # on the system.
-#    next unless defined $pages{$libpod} && $pages{$libpod};
-#
-#    # if there is a directory then use the .pod and .pm files within it.
-#    if ($pages{$libpod} =~ /([^:]*[^(\.pod|\.pm)]):/) {
-#        #  find all the .pod and .pm files within the directory
-#        $dirname = $1;
-#        opendir(DIR, $dirname) ||
-#        die "$0: error opening directory $dirname: $!\n";
-#        @files = grep(/(\.pod|\.pm)$/ && ! -d $_, readdir(DIR));
-#        closedir(DIR);
-#
-#        # scan each .pod and .pm file for =item directives
-#        foreach $pod (@files) {
-#        open(POD, "<$dirname/$pod") ||
-#            die "$0: error opening $dirname/$pod for input: $!\n";
-#        @poddata = <POD>;
-#        close(POD);
-#
-#        scan_items("$dirname/$pod", @poddata);
-#        }
-#
-#        # use the names of files as =item directives too.
-#        foreach $pod (@files) {
-#        $pod =~ /^(.*)(\.pod|\.pm)$/;
-#        $items{$1} = "$dirname/$1.html" if $1;
-#        }
-#    } elsif ($pages{$libpod} =~ /([^:]*\.pod):/ ||
-#         $pages{$libpod} =~ /([^:]*\.pm):/) {
-#        # scan the .pod or .pm file for =item directives
-#        $pod = $1;
-##        open(POD, "<$pod") ||
-#        die "$0: error opening $pod for input: $!\n";
-#        @poddata = <POD>;
-#        close(POD);
-#
-#        scan_items("$pod", @poddata);
-#    } else {
-#        warn "$0: shouldn't be here (line ".__LINE__."\n";
-#    }
-#    }
-#    @poddata = ();    # clean-up a bit
-#
-#    chdir($pwd)
-#    || die "$0: error changing to directory $pwd: $!\n";
-#
-#    # cache the item list for later use
-#    warn "caching items for later use\n" if $verbose;
-#    open(CACHE, ">$itemcache") ||
-#    die "$0: error open $itemcache for writing: $!\n";
-#
-#    print CACHE join(":", @podpath) . "\n$podroot\n";
-#    foreach my $key (keys %items) {
-#    print CACHE "$key $items{$key}\n";
-#    }
-#
-#    close(CACHE);
-#
-#    # cache the directory list for later use
-#    warn "caching directories for later use\n" if $verbose;
-#    open(CACHE, ">$dircache") ||
-#    die "$0: error open $dircache for writing: $!\n";
-#
-#    print CACHE join(":", @podpath) . "\n$podroot\n";
-#    foreach my $key (keys %pages) {
-#    print CACHE "$key $pages{$key}\n";
-#    }
-#
-#    close(CACHE);
-#}
-
-#
-# scan_dir - scans the directory specified in $dir for subdirectories, .pod
-#  files, and .pm files.  notes those that it finds.  this information will
-#  be used later in order to figure out where the pages specified in L<>
-#  links are on the filesystem.
-#
-#sub scan_dir {
-#    my($dir, $recurse) = @_;
-#    my($t, @subdirs, @pods, $pod, $dirname, @dirs);
-#    local $_;
-#
-#    @subdirs = ();
-#    @pods = ();
-#
-#    opendir(DIR, $dir) ||
-#    die "$0: error opening directory $dir: $!\n";
-#    while (defined($_ = readdir(DIR))) {
-#    if (-d "$dir/$_" && $_ ne "." && $_ ne "..") {        # directory
-#        $pages{$_}  = "" unless defined $pages{$_};
-#        $pages{$_} .= "$dir/$_:";
-#        push(@subdirs, $_);
-#    } elsif (/\.pod$/) {                                # .pod
-#        s/\.pod$//;
-#        $pages{$_}  = "" unless defined $pages{$_};
-#        $pages{$_} .= "$dir/$_.pod:";
-#        push(@pods, "$dir/$_.pod");
-#    } elsif (/\.pm$/) {                                 # .pm
-#        s/\.pm$//;
-#        $pages{$_}  = "" unless defined $pages{$_};
-#        $pages{$_} .= "$dir/$_.pm:";
-#        push(@pods, "$dir/$_.pm");
-#    }
-#    }
-#    closedir(DIR);
-#
-#    # recurse on the subdirectories if necessary
-#    if ($recurse) {
-#    foreach my $subdir (@subdirs) {
-#        scan_dir("$dir/$subdir", $recurse);
-#    }
-#    }
-#}
-#
-#
-# scan_headings - scan a pod file for head[1-6] tags, note the tags, and
-#  build an index.
-#
 sub scan_headings {
     my($sections, @data) = @_;
     my($tag, $which_head, $title, $listdepth, $index);
@@ -714,10 +477,10 @@ sub scan_headings {
         $$sections{htmlify(0,$title)} = 1;
 
         if ($which_head > $listdepth) {
-        $index .= "\n" . ("\t" x $listdepth) . "<para><itemizedList>\n";
+        $index .= "\n" . ("\t" x $listdepth) . "<itemizedList>\n";
         } elsif ($which_head < $listdepth) {
         $listdepth--;
-        $index .= "\n" . ("\t" x $listdepth) . "</itemizedList></para>\n";
+        $index .= "\n" . ("\t" x $listdepth) . "</itemizedList>\n";
         }
         $listdepth = $which_head;
 
@@ -728,7 +491,7 @@ sub scan_headings {
 
     # finish off the lists
     while ($listdepth--) {
-    $index .= "\n" . ("\t" x $listdepth) . "</itemizedList></para>\n";
+    $index .= "\n" . ("\t" x $listdepth) . "</itemizedList>\n";
     }
 
     # get rid of bogus lists
@@ -796,7 +559,7 @@ sub process_head {
     ### If a sect is active, close it off...
     my $popLevel = pop @sectStack;
     while ( defined $popLevel && $level <= $popLevel ) {
-#        print STDERR "Popping sectStack: $popLevel\n";
+#        print STDERR "Popping sectStack: $popLevel\t$#sectStack\n";
         print SGML "</sect$popLevel>";
         print SGML "\n\n";
         $popLevel = pop @sectStack;
@@ -807,14 +570,20 @@ sub process_head {
 
     ### Convert the heading and print it out.
     my $convert = $heading; process_text(\$convert, 0);
-    print SGML "<sect$level><title>$convert</title>";
+    if ( $firstSect1 == 1 ) {
+        print SGML "<chapter id=\"$rootId\"><title>$convert</title>";
+        $firstSect1 = 0;
+      } else {
+        print SGML "<sect$level id=\"$rootId-sect-\"><title>$convert</title>";
+
+        ### Set the active sect level
+        push @sectStack, $level;
+        $sectActive = $level;
+      }
     print SGML "\n<!-- Bogus hack to ensure that each sect has a paragraph in it -->\n";
     print SGML "<para>\n</para>\n";
     print SGML "\n\n";
 
-    ### Set the active sect level
-    push @sectStack, $level;
-    $sectActive = $level;
 #    print STDERR "Sect stack: ";
 #    foreach my $stack ( @sectStack ) {
 #        print STDERR "$stack ";
@@ -858,14 +627,16 @@ sub process_item {
             $listitemActive = 0;
           }
         if ( $need_preamble ) {
-            push( @listend,  "</listitem></itemizedList></para>" );
-            print SGML "<para><itemizedList>\n";
+            push( @listend,  "</listitem></itemizedList>\n" );
+            print SGML "<itemizedList>\n";
           }
         print SGML "<listitem>";
         $text =~ /\A\*\s*(.*)\Z/s;
         $quote = 1;
         #print SGML process_puretext($1, \$quote);
+        print SGML "<para>\n";
         print SGML $1;
+        print SGML "</para>\n";
         $listitemActive = 1;
       } elsif ($text =~ /\A[0-9#]+/) {    # numbered list
         if ( $listitemActive == 1 ) {
@@ -873,14 +644,16 @@ sub process_item {
             $listitemActive = 0;
           }
         if ($need_preamble) {
-            push( @listend,  "</listitem></orderedlist>" );
+            push( @listend,  "</listitem></orderedlist>\n" );
             print SGML "<orderedList>\n";
           }
         print SGML "<listitem>\n";
         $text =~ /\A[0-9]+\.?(.*)\Z/s;
         $quote = 1;
         #print SGML process_puretext($1, \$quote);
+        print SGML "<para>\n";
         print SGML $1 if $1;
+        print SGML "</para>\n";
         $listitemActive = 1;
       } else {            # all others
         if ( $listitemActive == 1 ) {
@@ -888,13 +661,15 @@ sub process_item {
             $listitemActive = 0;
           }
         if ( $need_preamble ) {
-            push( @listend,  '</listitem></varlistentry></variablelist></para>' );
+            push( @listend,  "</listitem></varlistentry></variablelist></para>\n" );
             print SGML "<para><variableList>\n";
           }
         print SGML "<varlistentry><term><emphasis>";
         $quote = 1;
         #print SGML process_puretext($text, \$quote);
+        print SGML "<para>\n";
         print SGML $text;
+        print SGML "</para>\n";
         print SGML "</emphasis></term>\n";
         print SGML "<listitem><para></para>\n";
         $listitemActive = 1;
@@ -1028,12 +803,12 @@ sub process_text {
             (\s*)(perl\w+)
           }{
             if (defined $pages{$2}) {    # is a link
-            qq($1<A HREF="$htmlroot/$pages{$2}">$2</A>);
+            qq($1$2);
             } else {
             "$1$2";
             }
           }xeg;
-    $rest =~ s/(<A HREF=)([^>:]*:)?([^>:]*)\.pod:([^>:]*:)?/$1$3.html/g;
+    $rest =~ s/()([^>:]*:)?([^>:]*)\.pod:([^>:]*:)?/$1$3.html/g;
 
   my $urls = '(' . join ('|', qw{
                 http
@@ -1067,7 +842,7 @@ sub process_text {
             |                       # or else
                 $                   #   then end of the string
         )
-      }{<A HREF="$1">$1</A>}igox;
+      }{$1}igox;
 
     $result =   "<screen>\n"    # text should be as it is (verbatim)
           . "$rest\n"

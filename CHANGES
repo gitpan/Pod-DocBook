@@ -1,0 +1,22 @@
+0.0.3
+=====
+
+    o POD files such as:
+
+        =head1 Some Chapter Title
+
+        blah
+
+      will format the first =head1 tag as a <chapter> tag and automatically
+      fill in the final </chapter> for you when run with --no-header and
+      --no-footer
+
+    o =over/=item/=back handling cleaned up a bit to produce correct
+      <variablelist>, <orderedList> and <itemizedList> constructs
+
+    o Added basic auto-tagging handling.
+
+    o Added --root-id argument to specify the root tag id
+
+    o Removed <A> tags which were an overhang from pod2html
+
