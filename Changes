@@ -1,3 +1,21 @@
+v1.0
+
+    Thu 19 Feb 2004
+
+        o released Pod::DocBook 1.0
+
+    Tue 30 Dec 2003
+
+        o started rewrite of Pod::DocBook
+
+        o specialize Pod::Parser instead of parsing directly
+
+        o emit formatted DocBook 4.2 SGML
+
+========================================================================
+OLD -- Pod::DocBook 0.6 and earlier
+========================================================================
+
 0.0.6
 =====
 
@@ -43,4 +61,3 @@
     o Added --root-id argument to specify the root tag id
 
     o Removed <A> tags which were an overhang from pod2html
-
