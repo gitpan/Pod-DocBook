@@ -1,0 +1,81 @@
+#!/usr/bin/perl
+    eval 'exec /usr/bin/perl -S $0 ${1+"$@"}'
+	if $running_under_some_shell;
+=pod
+
+=head1 NAME
+
+pod2docbook - convert .pod files to .html files
+
+=head1 SYNOPSIS
+
+    pod2docbook --help --infile=<name> --outfile=<name>
+                --title=<name> --verbose
+
+=head1 DESCRIPTION
+
+Converts files from pod format ( see L<perlpod> ) to HTML format.
+
+=head1 ARGUMENTS
+
+pod2docbook takes the following arguments:
+
+=over 4
+
+=item help
+
+  --help
+
+Displays the usage message.
+
+=item infile
+
+  --infile=name
+
+Specify the pod file to convert.  Input is taken from STDIN if no
+infile is specified.
+
+=item outfile
+
+  --outfile=name
+
+Specify the HTML file to create.  Output goes to STDOUT if no outfile
+is specified.
+
+=item title
+
+  --title=title
+
+Specify the title of the resulting HTML file.
+
+=item verbose
+
+  --verbose
+
+Display progress messages.
+
+=back
+
+=head1 AUTHOR
+
+Alligator Descartes E<lt>descarte@arcana.co.ukE<gt> from the original
+L<pod2html> source code by Tom Christiansen, E<lt>tchrist@perl.comE<gt>,
+for it is he.
+
+=head1 BUGS
+
+See L<Pod::DocBook> for a list of known bugs in the translator.
+
+=head1 SEE ALSO
+
+L<perlpod>, L<Pod::DocBook>
+
+=head1 COPYRIGHT
+
+This program is distributed under the Artistic License.
+
+=cut
+
+use Pod::DocBook;
+
+pod2docbook @ARGV;

@@ -1,0 +1,50 @@
+
+README for pod2docbook -- Version 0.01 -- 14th October 1998
+===========================================================
+
+About
+-----
+
+The pod2docbook convertor is designed to turn POD, or Plain Old Documentation,
+format documentation into SGML formatted for the DocBook DTD. This DTD is
+used by O'Reilly & Associates and has been developed by them in conjunction
+with the Davenport Group.
+
+POD Tag Support
+---------------
+
+All POD tags are supported, with the exception of L<> which produces 
+italicized text.
+
+Installation
+------------
+
+To install this module, simply type:
+
+    perl Makefile.PL
+    make
+    make install
+
+A short POD document has been provided for you to test the program with and
+is located in the pod sub-directory.
+
+Documentation
+-------------
+
+Documentation for the pod2docbook program and the Pod::DocBook module will
+be installed and can be read using the perldoc program. For example,
+
+    perldoc pod2docbook
+    perldoc Pod::DocBook
+
+Authors
+-------
+
+Copyright (c)1998 Alligator Descartes <descarte@arcana.co.uk>
+Portions Copyright (c)Tom Christiansen
+
+License
+-------
+
+This software is covered by the Artistic License.
+
